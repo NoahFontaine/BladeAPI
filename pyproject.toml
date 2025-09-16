@@ -8,6 +8,5 @@ dependencies = [
     "fastapi>=0.116.2",
     "motor>=3.7.1",
     "python-dotenv>=1.1.1",
-    "requests>=2.32.5",
     "uvicorn>=0.35.0",
 ]
