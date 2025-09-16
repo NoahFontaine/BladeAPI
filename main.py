@@ -40,12 +40,16 @@ def fix_id(doc):
     doc["_id"] = str(doc["_id"])
     return doc
 
+
 @app.post("/enter_workout", status_code=201)
 async def enter_workout(workout: Workout, request: Request):
     workout_dict = workout.model_dump()
+    
     res = await request.app.state.mongodb["workouts"].insert_one(workout_dict)
     workout_dict["_id"] = str(res.inserted_id)
+    
     return workout_dict
+
 
 @app.get("/workouts")
 async def list_workouts(request: Request,
@@ -53,15 +57,19 @@ async def list_workouts(request: Request,
                         type: Optional[str] = Query(None),
                         sport: Optional[str] = Query(None)):
     query = {}
+    
     if name:
         query["name"] = name
     if type:
         query["type"] = type
     if sport:
         query["sport"] = sport
+    
     cursor = request.app.state.mongodb["workouts"].find(query)
     items = await cursor.to_list(length=100)
+    
     return [fix_id(i) for i in items]
+
 
 @app.get("/workouts/{workout_id}")
 async def get_workout(workout_id: str, request: Request):
@@ -69,10 +77,14 @@ async def get_workout(workout_id: str, request: Request):
         oid = ObjectId(workout_id)
     except Exception:
         raise HTTPException(status_code=400, detail="invalid id")
+    
     doc = await request.app.state.mongodb["workouts"].find_one({"_id": oid})
+    
     if not doc:
         raise HTTPException(status_code=404, detail="not found")
+    
     return fix_id(doc)
+
 
 @app.delete("/workouts/{workout_id}", status_code=204)
 async def delete_workout(workout_id: str, request: Request):
@@ -80,7 +92,10 @@ async def delete_workout(workout_id: str, request: Request):
         oid = ObjectId(workout_id)
     except Exception:
         raise HTTPException(status_code=400, detail="invalid id")
+    
     res = await request.app.state.mongodb["workouts"].delete_one({"_id": oid})
+    
     if res.deleted_count == 0:
         raise HTTPException(status_code=404, detail="not found")
+    
     return None
