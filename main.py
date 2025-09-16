@@ -41,6 +41,11 @@ def fix_id(doc):
     return doc
 
 
+@app.get("/")
+async def root():
+    return {"message": "Welcome to BladeAPI"}
+
+
 @app.post("/enter_workout", status_code=201)
 async def enter_workout(workout: Workout, request: Request):
     workout_dict = workout.model_dump()
