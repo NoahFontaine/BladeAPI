@@ -1,9 +1,21 @@
 from pydantic import BaseModel
 from typing import Optional
 
+
+class User(BaseModel):
+    name: str
+    email: str
+    username: str
+    password: str
+    squad: Optional[str] = None # e.g., M1, W1, M2, W2, etc.
+    age: Optional[int] = None
+    weight: Optional[float] = None
+    height: Optional[float] = None
+
+
 class Workout(BaseModel):
     # Mandatory fields
-    name: str
+    user: User
     sport: str
     type: str # e.g., Z1, Z2, Z3, UT1, UT2, AT, TR, AN, etc.
     date: str
@@ -20,5 +32,3 @@ class Workout(BaseModel):
     perceived_exertion: Optional[int] = None # RPE scale 1-10
     location: Optional[str] = None
     notes: Optional[str] = None
-
-
