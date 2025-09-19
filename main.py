@@ -1,6 +1,7 @@
 import os
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request, HTTPException, Query
+from fastapi.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 from typing import Optional
 from contextlib import asynccontextmanager
@@ -27,6 +28,14 @@ async def lifespan(app: FastAPI):
         client.close()
 
 app = FastAPI(title="BladeAPI", lifespan=lifespan)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # or ["http://localhost:5173"]
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 #---------------------------------------------------------------------------
 #       API Endpoints
@@ -59,12 +68,15 @@ async def enter_workout(workout: Workout, request: Request):
 @app.get("/workouts")
 async def list_workouts(request: Request,
                         name: Optional[str] = Query(None),
+                        username: Optional[str] = Query(None),
                         type: Optional[str] = Query(None),
                         sport: Optional[str] = Query(None)):
     query = {}
     
     if name:
-        query["name"] = name
+        query["user.name"] = name
+    if username:
+        query["user.username"] = username
     if type:
         query["type"] = type
     if sport:
