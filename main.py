@@ -1,12 +1,12 @@
 import os
 from dotenv import load_dotenv
-from fastapi import FastAPI, Request, HTTPException, Query
+from fastapi import FastAPI, Request, HTTPException, Query, Response
 from fastapi.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 from typing import Optional
 from contextlib import asynccontextmanager
 from bson import ObjectId
-from models import Workout
+from models import User, Workout
 
 load_dotenv()
 
@@ -22,6 +22,10 @@ async def lifespan(app: FastAPI):
     client = AsyncIOMotorClient(MONGO_URI)
     app.state.mongodb_client = client
     app.state.mongodb = client[DB_NAME]
+    # Ensure unique indexes for users to prevent duplicate entries
+    # (email and username uniqueness are typical; adjust as needed)
+    await app.state.mongodb["users"].create_index("email", unique=True)
+    await app.state.mongodb["users"].create_index("name", unique=True)
     try:
         yield
     finally:
@@ -53,6 +57,67 @@ def fix_id(doc):
 @app.get("/")
 async def root():
     return {"message": "Welcome to BladeAPI"}
+
+
+@app.post("/add_user", status_code=201)
+async def add_user(user: User, request: Request, response: Response):
+    """
+    Create a new user if neither email nor name exists; otherwise update existing user.
+
+    Returns 201 on create, 200 on update.
+    """
+    users_col = request.app.state.mongodb["users"]
+    user_dict = user.model_dump()
+
+    # Find existing by email OR name
+    existing = await users_col.find_one({"$or": [{"email": user.email}, {"name": user.name}]})
+
+    if existing:
+        # Update existing document with incoming (ignore None values to avoid overwriting with nulls)
+        update_fields = {k: v for k, v in user_dict.items() if v is not None}
+        if update_fields:
+            await users_col.update_one({"_id": existing["_id"]}, {"$set": update_fields})
+            existing.update(update_fields)
+        existing["_id"] = str(existing["_id"])
+        response.status_code = 200
+        return {"updated": True, **existing}
+
+    # Create new user
+    try:
+        res = await users_col.insert_one(user_dict)
+    except Exception as e:
+        if "E11000" in str(e):
+            # Unique index collision (race condition) -> try update path
+            existing = await users_col.find_one({"$or": [{"email": user.email}, {"name": user.name}]})
+            if existing:
+                update_fields = {k: v for k, v in user_dict.items() if v is not None}
+                if update_fields:
+                    await users_col.update_one({"_id": existing["_id"]}, {"$set": update_fields})
+                    existing.update(update_fields)
+                existing["_id"] = str(existing["_id"])
+                response.status_code = 200
+                return {"updated": True, **existing}
+            raise HTTPException(status_code=409, detail="User already exists")
+        raise
+
+    user_dict["_id"] = str(res.inserted_id)
+    return {"created": True, **user_dict}
+
+
+@app.get("/users")
+async def list_users(request: Request,
+                     name: Optional[str] = Query(None),
+                     email: Optional[str] = Query(None)):
+    query = {}
+    if name:
+        query["name"] = name
+    if email:
+        query["email"] = email
+
+    cursor = request.app.state.mongodb["users"].find(query)
+    items = await cursor.to_list(length=100)
+
+    return [fix_id(i) for i in items]
 
 
 @app.post("/enter_workout", status_code=201)

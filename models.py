@@ -5,8 +5,8 @@ from typing import Optional
 class User(BaseModel):
     name: str
     email: str
-    username: str
-    password: str
+    username: Optional[str] = None
+    password: Optional[str] = None
     squad: Optional[str] = None # e.g., M1, W1, M2, W2, etc.
     age: Optional[int] = None
     weight: Optional[float] = None
