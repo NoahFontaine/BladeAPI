@@ -22,6 +22,7 @@ class Workout(BaseModel):
     duration: int
 
     # Optional fields
+    squad: Optional[str] = None
     start_time: Optional[str] = None
     end_time: Optional[str] = None
     heart_rate: Optional[int] = None
