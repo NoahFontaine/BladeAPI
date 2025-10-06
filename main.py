@@ -133,6 +133,7 @@ async def enter_workout(workout: Workout, request: Request):
 @app.get("/workouts")
 async def list_workouts(request: Request,
                         name: Optional[str] = Query(None),
+                        squad: Optional[str] = Query(None),
                         username: Optional[str] = Query(None),
                         type: Optional[str] = Query(None),
                         sport: Optional[str] = Query(None)):
@@ -140,6 +141,8 @@ async def list_workouts(request: Request,
     
     if name:
         query["user.name"] = name
+    if squad:
+        query["squad"] = squad
     if username:
         query["user.username"] = username
     if type:
