@@ -22,8 +22,6 @@ async def lifespan(app: FastAPI):
     client = AsyncIOMotorClient(MONGO_URI)
     app.state.mongodb_client = client
     app.state.mongodb = client[DB_NAME]
-    # Ensure unique indexes for users to prevent duplicate entries
-    # (email and username uniqueness are typical; adjust as needed)
     await app.state.mongodb["users"].create_index("email", unique=True)
     await app.state.mongodb["users"].create_index("name", unique=True)
     try:
@@ -194,3 +192,38 @@ async def add_busy_event(event: BusyEvent, request: Request):
     event_dict["_id"] = str(res.inserted_id)
     
     return event_dict
+
+
+@app.get("/busy_events")
+async def list_busy_events(request: Request,
+                           name: Optional[str] = Query(None),
+                           email: Optional[str] = Query(None),
+                           date: Optional[str] = Query(None)):
+    query = {}
+    
+    if name:
+        query["user.name"] = name
+    if email:
+        query["user.email"] = email
+    if date:
+        query["date"] = date
+    
+    cursor = request.app.state.mongodb["busy_events"].find(query)
+    items = await cursor.to_list(length=100)
+    
+    return [fix_id(i) for i in items]
+
+
+@app.delete("/busy_events/{event_id}", status_code=204)
+async def delete_busy_event(event_id: str, request: Request):
+    try:
+        oid = ObjectId(event_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="invalid id")
+    
+    res = await request.app.state.mongodb["busy_events"].delete_one({"_id": oid})
+    
+    if res.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="not found")
+
+    return None
