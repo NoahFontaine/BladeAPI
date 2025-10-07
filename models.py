@@ -36,8 +36,16 @@ class Workout(BaseModel):
 
 
 class BusyEvent(BaseModel):
-    user: User
+    # Mandatory fields
     date: str
     start_time: str
     end_time: str
+    squad: str
+
+    # Optional fields
+    name: Optional[str] = None
+    email: Optional[str] = None
+    username: Optional[str] = None
+    password: Optional[str] = None
+    user: Optional[User] = None
     description: Optional[str] = None
