@@ -204,9 +204,9 @@ async def list_busy_events(request: Request,
     query = {}
     
     if name:
-        query["user.name"] = name
+        query["name"] = name
     if email:
-        query["user.email"] = email
+        query["email"] = email
     if date:
         query["date"] = date
     
