@@ -6,7 +6,7 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from typing import Optional
 from contextlib import asynccontextmanager
 from bson import ObjectId
-from models import User, Workout
+from models import User, Workout, BusyEvent
 
 load_dotenv()
 
@@ -184,3 +184,13 @@ async def delete_workout(workout_id: str, request: Request):
         raise HTTPException(status_code=404, detail="not found")
     
     return None
+
+
+@app.post("/add_busy_event", status_code=201)
+async def add_busy_event(event: BusyEvent, request: Request):
+    event_dict = event.model_dump()
+    
+    res = await request.app.state.mongodb["busy_events"].insert_one(event_dict)
+    event_dict["_id"] = str(res.inserted_id)
+    
+    return event_dict

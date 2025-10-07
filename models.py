@@ -33,3 +33,11 @@ class Workout(BaseModel):
     perceived_exertion: Optional[int] = None # RPE scale 1-10
     location: Optional[str] = None
     notes: Optional[str] = None
+
+
+class BusyEvent(BaseModel):
+    user: User
+    date: str
+    start_time: str
+    end_time: str
+    description: Optional[str] = None
