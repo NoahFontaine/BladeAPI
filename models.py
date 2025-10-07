@@ -48,4 +48,5 @@ class BusyEvent(BaseModel):
     username: Optional[str] = None
     password: Optional[str] = None
     user: Optional[User] = None
-    description: Optional[str] = None
+    title: Optional[str] = None
+    notes: Optional[str] = None
