@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel
 from typing import Optional
 
 
@@ -53,4 +53,4 @@ class BusyEvent(BaseModel):
 
 
 class GoogleSyncRequest(BaseModel):
-    email: EmailStr
+    email: str
