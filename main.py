@@ -1,14 +1,21 @@
 import os
 from dotenv import load_dotenv
-from fastapi import FastAPI, Request, HTTPException, Response, Body, Query
+from fastapi import FastAPI, Request, HTTPException, Response, Body, Query, Depends
+from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse
 import asyncio
-import datetime
 from fastapi.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 from typing import Optional
 from contextlib import asynccontextmanager
 from bson import ObjectId
-from models import User, Workout, BusyEvent
+from models import User, Workout, BusyEvent, GoogleSyncRequest
+from google.oauth2.credentials import Credentials
+from googleapiclient.discovery import build
+from google.auth.transport.requests import Request as GoogleRequest
+from datetime import datetime, timedelta
+import httpx
+
 
 load_dotenv()
 
@@ -229,3 +236,158 @@ async def delete_busy_event(event_id: str, request: Request):
         raise HTTPException(status_code=404, detail="not found")
 
     return None
+
+
+@app.post("/calendar/google/sync")
+async def google_sync(request: Request, payload: GoogleSyncRequest):
+    users_col = request.app.state.mongodb["users"]
+
+    # Fetch user
+    user = await users_col.find_one({"email": payload.email})
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    google = user.get("google_calendar")
+
+    # ------------------------------
+    # Case 1: user has NOT connected Google
+    # ------------------------------
+    if not google or "refresh_token" not in google:
+        connect_url = build_google_oauth_url(str(user["_id"]))
+        return {"connect_url": connect_url}
+
+    # ------------------------------
+    # Case 2: already connected → sync now
+    # ------------------------------
+    try:
+        await sync_google_calendar_async(user, request)
+    except Exception as e:
+        print("Google sync failed:", e)
+        raise HTTPException(status_code=500, detail="Google sync failed")
+
+    return {"status": "synced"}
+
+##### Helper Functions ######
+
+
+async def sync_google_calendar_async(user: dict, request: Request):
+    busy_col = request.app.state.mongodb["busy_events"]
+
+    refresh_token = user["google_calendar"]["refresh_token"]
+
+    creds = Credentials(
+        token=None,
+        refresh_token=refresh_token,
+        token_uri="https://oauth2.googleapis.com/token",
+        client_id=os.environ["GOOGLE_CLIENT_ID"],
+        client_secret=os.environ["GOOGLE_CLIENT_SECRET"],
+        scopes=["https://www.googleapis.com/auth/calendar.freebusy"],
+    )
+
+    # Google client is blocking → run in thread
+    loop = asyncio.get_event_loop()
+    await loop.run_in_executor(None, creds.refresh, GoogleRequest())
+
+    service = build("calendar", "v3", credentials=creds)
+
+    now = datetime.utcnow()
+    time_min = now.isoformat() + "Z"
+    time_max = (now + timedelta(days=14)).isoformat() + "Z"
+
+    def fetch_freebusy():
+        return service.freebusy().query(
+            body={
+                "timeMin": time_min,
+                "timeMax": time_max,
+                "items": [{"id": "primary"}],
+            }
+        ).execute()
+
+    result = await loop.run_in_executor(None, fetch_freebusy)
+
+    busy_blocks = result["calendars"]["primary"]["busy"]
+
+    # Remove existing Google busy blocks
+    await busy_col.delete_many({
+        "email": user["email"],
+        "source": "google",
+    })
+
+    # Insert new ones
+    if busy_blocks:
+        await busy_col.insert_many([
+            {
+                "name": user["name"],
+                "email": user["email"],
+                "start": b["start"],
+                "end": b["end"],
+                "source": "google",
+                "synced_at": datetime.utcnow(),
+            }
+            for b in busy_blocks
+        ])
+
+
+import urllib.parse
+
+GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
+
+def build_google_oauth_url(user_id: str) -> str:
+    params = {
+        "client_id": os.environ["GOOGLE_CLIENT_ID"],
+        "redirect_uri": os.environ["GOOGLE_REDIRECT_URI"],
+        "response_type": "code",
+        "scope": " ".join([
+            "https://www.googleapis.com/auth/calendar.freebusy",
+        ]),
+        "access_type": "offline",     # 🔑 refresh token
+        "prompt": "consent",          # 🔑 force refresh token
+        "state": user_id,             # 🔐 who is connecting
+        "include_granted_scopes": "true",
+    }
+
+    return f"{GOOGLE_AUTH_URL}?{urllib.parse.urlencode(params)}"
+
+
+@app.get("/auth/google/callback")
+async def google_oauth_callback(
+    code: str,
+    state: str,
+    request: Request,
+):
+    users_col = request.app.state.mongodb["users"]
+
+    # Exchange code for tokens
+    async with httpx.AsyncClient() as client:
+        resp = await client.post(
+            "https://oauth2.googleapis.com/token",
+            data={
+                "client_id": os.environ["GOOGLE_CLIENT_ID"],
+                "client_secret": os.environ["GOOGLE_CLIENT_SECRET"],
+                "code": code,
+                "grant_type": "authorization_code",
+                "redirect_uri": os.environ["GOOGLE_REDIRECT_URI"],
+            },
+        )
+        resp.raise_for_status()
+        tokens = resp.json()
+
+    # Save refresh token 🔑
+    await users_col.update_one(
+        {"_id": ObjectId(state)},
+        {
+            "$set": {
+                "google_calendar": {
+                    "refresh_token": tokens["refresh_token"],
+                    "access_token": tokens["access_token"],
+                    "expires_at": datetime.utcnow()
+                    + timedelta(seconds=tokens["expires_in"]),
+                }
+            }
+        },
+    )
+
+    # Redirect back to frontend
+    return RedirectResponse(
+        url="http://localhost:5173/crew"
+    )
