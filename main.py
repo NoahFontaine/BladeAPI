@@ -273,6 +273,8 @@ async def google_sync(request: Request, payload: GoogleSyncRequest):
 async def sync_google_calendar_async(user: dict, request: Request):
     busy_col = request.app.state.mongodb["busy_events"]
 
+    print(user)
+
     refresh_token = user["google_calendar"]["refresh_token"]
 
     creds = Credentials(
@@ -371,6 +373,7 @@ async def google_oauth_callback(
         )
         resp.raise_for_status()
         tokens = resp.json()
+        print(tokens)
 
     # Save refresh token 🔑
     await users_col.update_one(
