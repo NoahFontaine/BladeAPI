@@ -273,9 +273,8 @@ async def google_sync(request: Request, payload: GoogleSyncRequest):
 async def sync_google_calendar_async(user: dict, request: Request):
     busy_col = request.app.state.mongodb["busy_events"]
 
-    print(user)
-
     refresh_token = user["google_calendar"]["refresh_token"]
+    print(refresh_token)
 
     creds = Credentials(
         token=None,
@@ -321,8 +320,10 @@ async def sync_google_calendar_async(user: dict, request: Request):
             {
                 "name": user["name"],
                 "email": user["email"],
-                "start": b["start"],
-                "end": b["end"],
+                "start_time": b["start"],  # Changed from "start"
+                "end_time": b["end"],      # Changed from "end"
+                "date": b["start"][:10],   # Extract date from datetime
+                "squad": user.get("squad", ""),  # Add required squad field
                 "source": "google",
                 "synced_at": datetime.utcnow(),
             }
